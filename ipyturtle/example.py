@@ -23,6 +23,24 @@ import ipywidgets as widgets
 import math
 from traitlets import Unicode, Bool, Int, Float
 
+# https://code.activestate.com/recipes/577659-decorators-for-adding-aliases-to-methods-in-a-clas/
+class alias(object):
+    def __init__(self, *aliases):
+        self.aliases = set(aliases)
+
+    def __call__(self, f):
+        f._aliases = self.aliases
+        return f
+
+def aliased(aliased_class):
+    original_methods = aliased_class.__dict__.copy()
+    for name, method in original_methods.items():
+        if hasattr(method, '_aliases'):
+            for alias in method._aliases - set(original_methods):
+                setattr(aliased_class, alias, method)
+    return aliased_class
+
+@aliased
 @widgets.register
 class Turtle(widgets.DOMWidget):
     """"""
@@ -95,12 +113,34 @@ class Turtle(widgets.DOMWidget):
     def heading(self):
         return self._turtle_heading
 
-    def goto(self, x, y=None):
-        if y is None:
-            y = x[1]
-            x = x[0]
-        self._turtle_location_x = float(x)
-        self._turtle_location_y = float(y)
+    @alias('seth')
+    def setheading(self, angle):
+        self._turtle_heading = angle % 360
+
+        self._turtle_heading_x = math.cos(math.radians(self._turtle_heading))
+        self._turtle_heading_y = math.sin(math.radians(self._turtle_heading))
+        
+    @alias('setposition', 'setpos')
+    def goto(self, x, y):
+        start_heading = self._turtle_heading
+        delta_x = x - self._turtle_location_x
+        delta_y = y - self._turtle_location_y
+        
+        degrees = math.degrees(math.atan2(delta_y, delta_x))
+        distance = math.sqrt((delta_x)**2 + (delta_y)**2)
+        
+        self.setheading(degrees)
+        self.forward(distance)
+        self.setheading(start_heading)
+        
+    def circle(self, radius):
+        steps = 45
+        speed = ((360/steps) / 60) * radius + 1/steps
+        rotate = 360/steps
+        
+        for i in range(steps):
+            self.forward(speed)
+            self.left(rotate)
 
     def setpos(self, x, y=None):
         return self.goto(x, y)
@@ -152,13 +192,21 @@ class Turtle(widgets.DOMWidget):
     def pencolor(self,r=-1,g=-1,b=-1):
         if r == -1:
             if len(self._current_color)==0:
-                return  self._current_color_rgb
+                return self._current_color_rgb
             else:
                 return self._current_color
         elif type(r) == str:
             self._current_color = r
             self._current_color_rgb = None
+        elif type(r) == tuple:
+            self._current_color = ""
+            self._current_color_rgb = r
         else:
             self._current_color = ""
             self._current_color_rgb = (r,g,b)
         self.forward(0)
+
+    def reset_notebook():
+        t.reset()
+        t.seth(0)
+        return t
